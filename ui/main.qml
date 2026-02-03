@@ -11,7 +11,69 @@ ApplicationWindow {
     Backend { id: backend }
     SqlDatabase { id: sqlDb }
     KeyValueStore { id: kvs }
-    GitHubUpdater { id: updater }
+    GitHubUpdater { 
+        id: updater 
+        
+        onUpdateAvailable: (newVersion, downloadUrl) => {
+            updateDialog.newVersion = newVersion
+            updateDialog.downloadUrl = downloadUrl
+            updateDialog.state = "Available"
+            updateDialog.open()
+        }
+        onDownloadFinished: (filePath) => {
+            updateDialog.state = "ReadyToInstall"
+        }
+        onErrorOccurred: (message) => {
+            backend.setMessage("Update Error: " + message)
+        }
+    }
+
+    Dialog {
+        id: updateDialog
+        property string newVersion: ""
+        property string downloadUrl: ""
+        property string state: "Available" // Available, Downloading, ReadyToInstall
+
+        title: state === "Available" ? "Update Available" : 
+               state === "Downloading" ? "Downloading..." : "Update Ready"
+        
+        anchors.centerIn: parent
+        modal: true
+        standardButtons: state === "Downloading" ? Dialog.NoButton : 
+                         state === "Available" ? Dialog.Ok | Dialog.Cancel : Dialog.Ok
+
+        Column {
+            spacing: 10
+            width: parent.width
+            
+            Text { 
+                text: state === "Available" ? "A new version is available: " + updateDialog.newVersion :
+                      state === "Downloading" ? "Downloading update..." : "Download complete!"
+            }
+            
+            ProgressBar {
+                visible: updateDialog.state === "Downloading"
+                value: updater.downloadProgress
+                width: parent.width
+            }
+
+            Text { 
+                visible: updateDialog.state === "Available"
+                text: "Do you want to download and install it?"
+                font.italic: true
+            }
+        }
+
+        onAccepted: {
+            if (state === "Available") {
+                state = "Downloading"
+                updater.downloadUpdate(updateDialog.downloadUrl)
+                updateDialog.open() // Keep open
+            } else if (state === "ReadyToInstall") {
+                updater.installUpdate()
+            }
+        }
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -23,9 +85,16 @@ ApplicationWindow {
             width: parent.width * 0.8
 
             Text {
-                text: qsTr("Production Ready Structure")
+                text: qsTr("Engineering Supporter")
                 font.pixelSize: 22
                 font.bold: true
+                anchors.horizontalCenter: parent.horizontalCenter
+            }
+
+            Text {
+                text: "Current Version: " + updater.currentVersion
+                font.pixelSize: 12
+                color: "#666666"
                 anchors.horizontalCenter: parent.horizontalCenter
             }
 
@@ -63,7 +132,11 @@ ApplicationWindow {
             Button {
                 text: qsTr("Check for Updates (GitHub)")
                 width: parent.width
-                onClicked: updater.checkForUpdates("user/repo")
+                highlighted: true
+                onClicked: {
+                    backend.setMessage("Checking for updates...")
+                    updater.checkForUpdates("Ryokugyoku/EngineeringSupporterTools")
+                }
             }
         }
     }

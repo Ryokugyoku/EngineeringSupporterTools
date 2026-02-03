@@ -1,0 +1,80 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v3
+        with:
+          version: '6.5.0' # 安定版のQt6を指定
+          host: ${{ matrix.os == 'windows-latest' && 'windows' || 'mac' }}
+          target: 'desktop'
+          arch: ${{ matrix.os == 'windows-latest' && 'win64_msvc2019_64' || 'clang_64' }}
+
+      - name: Configure CMake
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: |
+          cmake --build build --config Release
+
+      - name: Package Windows
+        if: matrix.os == 'windows-latest'
+        run: |
+          # windeployqtで依存DLLを収集
+          windeployqt --qmldir ui build/Release/EngineeringSupporter.exe
+          # 実行ファイルをリネームして配布用に
+          powershell Compress-Archive -Path build/Release/* -DestinationPath EngineeringSupporter-Windows.zip
+
+      - name: Package macOS
+        if: matrix.os == 'macos-latest'
+        run: |
+          # macdeployqtで.appを作成（qt_add_executableが適切なら.appができるはず）
+          # 現状のCMake構成だと単一バイナリかもしれないので調整が必要な場合あり
+          # ここではシンプルにバイナリをラップ
+          mkdir -p EngineeringSupporter.app/Contents/MacOS
+          cp build/EngineeringSupporter EngineeringSupporter.app/Contents/MacOS/
+          macdeployqt EngineeringSupporter.app -qmldir=ui -dmg
+          mv EngineeringSupporter.dmg EngineeringSupporter-macOS.dmg
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-build
+          path: |
+            EngineeringSupporter-Windows.zip
+            EngineeringSupporter-macOS.dmg
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            windows-latest-build/EngineeringSupporter-Windows.zip
+            macos-latest-build/EngineeringSupporter-macOS.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

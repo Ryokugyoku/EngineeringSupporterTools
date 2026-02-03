@@ -1,12 +1,184 @@
 #include "GitHubUpdater.h"
 #include <QDebug>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QNetworkRequest>
+#include <QFile>
+#include <QStandardPaths>
+#include <QDir>
+#include <QProcess>
+#include <QCoreApplication>
 
 GitHubUpdater::GitHubUpdater(QObject *parent) : QObject(parent)
 {
+    m_networkManager = new QNetworkAccessManager(this);
+}
+
+void GitHubUpdater::setCurrentVersion(const QString &version)
+{
+    if (m_currentVersion != version) {
+        m_currentVersion = version;
+        emit currentVersionChanged();
+    }
 }
 
 void GitHubUpdater::checkForUpdates(const QString &repoPath)
 {
-    qDebug() << "Checking for updates on GitHub:" << repoPath;
-    // ここで QNetworkAccessManager 等を使用して GitHub API を呼び出します
+    if (repoPath.isEmpty()) {
+        emit errorOccurred("Repository path is empty");
+        return;
+    }
+
+    QUrl url(QString("https://api.github.com/repos/%1/releases/latest").arg(repoPath));
+    QNetworkRequest request(url);
+    request.setHeader(QNetworkRequest::UserAgentHeader, "EngineeringSupporter-Updater");
+
+    qDebug() << "Requesting update info from:" << url.toString();
+    QNetworkReply *reply = m_networkManager->get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        onReplyFinished(reply);
+    });
+}
+
+void GitHubUpdater::onReplyFinished(QNetworkReply *reply)
+{
+    reply->deleteLater();
+
+    if (reply->error() != QNetworkReply::NoError) {
+        emit errorOccurred(QString("Network error: %1").arg(reply->errorString()));
+        return;
+    }
+
+    QByteArray response = reply->readAll();
+    QJsonDocument doc = QJsonDocument::fromJson(response);
+    if (doc.isNull() || !doc.isObject()) {
+        emit errorOccurred("Invalid JSON response from GitHub");
+        return;
+    }
+
+    QJsonObject obj = doc.object();
+    QString tagName = obj["tag_name"].toString();
+    if (tagName.isEmpty()) {
+        emit errorOccurred("Could not find tag_name in release info");
+        return;
+    }
+
+    m_latestVersion = tagName;
+    emit latestVersionChanged();
+
+    qDebug() << "Latest version found:" << m_latestVersion << "(Current:" << m_currentVersion << ")";
+
+    if (tagName != m_currentVersion) {
+        QString downloadUrl;
+        QJsonArray assets = obj["assets"].toArray();
+        
+        QString platformSuffix;
+#ifdef Q_OS_WIN
+        platformSuffix = ".exe";
+#elif defined(Q_OS_MACOS)
+        platformSuffix = ".dmg";
+#endif
+
+        bool foundAsset = false;
+        if (!assets.isEmpty()) {
+            for (int i = 0; i < assets.size(); ++i) {
+                QString assetName = assets[i].toObject()["name"].toString();
+                if (assetName.endsWith(platformSuffix, Qt::CaseInsensitive)) {
+                    downloadUrl = assets[i].toObject()["browser_download_url"].toString();
+                    foundAsset = true;
+                    break;
+                }
+            }
+            if (!foundAsset) {
+                downloadUrl = assets[0].toObject()["browser_download_url"].toString();
+            }
+        } else {
+            downloadUrl = obj["html_url"].toString();
+        }
+
+        emit updateAvailable(tagName, downloadUrl);
+    } else {
+        qDebug() << "App is up to date.";
+    }
+}
+
+void GitHubUpdater::downloadUpdate(const QString &url)
+{
+    if (url.isEmpty()) return;
+
+    m_isDownloading = true;
+    emit isDownloadingChanged();
+    m_downloadProgress = 0;
+    emit downloadProgressChanged();
+
+    QNetworkRequest request((QUrl(url)));
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, true); // Follow redirects by default in newer Qt or use simple true
+    request.setHeader(QNetworkRequest::UserAgentHeader, "EngineeringSupporter-Updater");
+
+    QNetworkReply *reply = m_networkManager->get(request);
+    
+    connect(reply, &QNetworkReply::downloadProgress, this, &GitHubUpdater::onDownloadProgress);
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        reply->deleteLater();
+        m_isDownloading = false;
+        emit isDownloadingChanged();
+
+        if (reply->error() != QNetworkReply::NoError) {
+            emit errorOccurred("Download failed: " + reply->errorString());
+            return;
+        }
+
+        QString fileName = reply->url().fileName();
+        if (fileName.isEmpty()) fileName = "update_package";
+        
+        QString tempPath = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+        m_downloadedFilePath = QDir(tempPath).filePath(fileName);
+
+        QFile file(m_downloadedFilePath);
+        if (file.open(QIODevice::WriteOnly)) {
+            file.write(reply->readAll());
+            file.close();
+            qDebug() << "Downloaded to:" << m_downloadedFilePath;
+            emit downloadFinished(m_downloadedFilePath);
+        } else {
+            emit errorOccurred("Failed to save downloaded file");
+        }
+    });
+}
+
+void GitHubUpdater::onDownloadProgress(qint64 bytesReceived, qint64 bytesTotal)
+{
+    if (bytesTotal > 0) {
+        m_downloadProgress = static_cast<double>(bytesReceived) / bytesTotal;
+        emit downloadProgressChanged();
+    }
+}
+
+void GitHubUpdater::installUpdate()
+{
+    if (m_downloadedFilePath.isEmpty() || !QFile::exists(m_downloadedFilePath)) {
+        emit errorOccurred("No update file to install");
+        return;
+    }
+
+#ifdef Q_OS_WIN
+    // Windows: 外部コマンドで自分自身を置き換えるか、インストーラーを起動
+    // ここでは単純にインストーラー/新バイナリを起動して終了する例
+    if (QProcess::startDetached(m_downloadedFilePath)) {
+        QCoreApplication::quit();
+    } else {
+        emit errorOccurred("Failed to launch update installer");
+    }
+#elif defined(Q_OS_MACOS)
+    // macOS: DMGならマウントして中身をコピー、または実行ファイルなら置き換え
+    // ここでは単純にファイルをブラウザ/Finderで開くか、またはスクリプトで対応
+    if (QProcess::startDetached("open", {m_downloadedFilePath})) {
+        // macOSの場合はDMGを開いた後にユーザーがドラッグ&ドロップするのが一般的
+        // 自動でやる場合はもっと複雑な処理が必要
+        QCoreApplication::quit();
+    } else {
+        emit errorOccurred("Failed to open update package");
+    }
+#endif
 }
