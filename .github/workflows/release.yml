@@ -48,13 +48,10 @@ jobs:
       - name: Package macOS
         if: matrix.os == 'macos-latest'
         run: |
-          # macdeployqtで.appを作成（qt_add_executableが適切なら.appができるはず）
-          # 現状のCMake構成だと単一バイナリかもしれないので調整が必要な場合あり
-          # ここではシンプルにバイナリをラップ
-          mkdir -p EngineeringSupporter.app/Contents/MacOS
-          cp build/EngineeringSupporter EngineeringSupporter.app/Contents/MacOS/
-          macdeployqt EngineeringSupporter.app -qmldir=ui -dmg
-          mv EngineeringSupporter.dmg EngineeringSupporter-macOS.dmg
+          # 実行ファイルが生成されているディレクトリを確認（qt_add_executableのデフォルト挙動）
+          # macOSでは .app 形式で出力されるようにビルド
+          macdeployqt build/EngineeringSupporter.app -qmldir=ui -dmg -no-plugins
+          mv build/EngineeringSupporter.dmg EngineeringSupporter-macOS.dmg
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4

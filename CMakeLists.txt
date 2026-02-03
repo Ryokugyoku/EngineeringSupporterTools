@@ -20,6 +20,7 @@ add_definitions(-DAPP_VERSION="${PROJECT_VERSION}")
 include_directories(include data network)
 
 qt_add_executable(${TARGET_NAME}
+    MACOS_BUNDLE
     src/main.cpp
 )
 
