@@ -56,13 +56,20 @@ jobs:
             BINARY_PATH=$(find build -name "EngineeringSupporter" -type f -not -path "*/CMakeFiles/*" | head -n 1)
             if [ -n "$BINARY_PATH" ]; then
               mkdir -p build/EngineeringSupporter.app/Contents/MacOS
+              mkdir -p build/EngineeringSupporter.app/Contents/Resources
               cp "$BINARY_PATH" build/EngineeringSupporter.app/Contents/MacOS/
               APP_PATH="build/EngineeringSupporter.app"
+              
+              # 最小限の Info.plist を作成
+              printf '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n    <key>CFBundleExecutable</key>\n    <string>EngineeringSupporter</string>\n    <key>CFBundleIdentifier</key>\n    <string>com.ryokugyoku.EngineeringSupporter</string>\n    <key>CFBundleName</key>\n    <string>EngineeringSupporter</string>\n    <key>CFBundlePackageType</key>\n    <string>APPL</string>\n    <key>CFBundleShortVersionString</key>\n    <string>1.0.0</string>\n    <key>LSMinimumSystemVersion</key>\n    <string>10.15</string>\n</dict>\n</plist>' > build/EngineeringSupporter.app/Contents/Info.plist
             else
               echo "ERROR: EngineeringSupporter target not found!"
               exit 1
             fi
           fi
+
+          # 拡張属性（検疫フラグや中途半端な署名）を削除して「完全に署名なし」の状態にする
+          find "$APP_PATH" -type f -exec xattr -c {} \;
 
           # macdeployqt でパッケージング
           macdeployqt "$APP_PATH" -qmldir=ui -dmg -no-plugins
