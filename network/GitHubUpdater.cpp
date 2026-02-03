@@ -64,32 +64,41 @@ void GitHubUpdater::onReplyFinished(QNetworkReply *reply)
         return;
     }
 
+    // Normalize versions for comparison (remove 'v' prefix)
+    QString latest = tagName.startsWith('v') ? tagName.mid(1) : tagName;
+    QString current = m_currentVersion.startsWith('v') ? m_currentVersion.mid(1) : m_currentVersion;
+
     m_latestVersion = tagName;
     emit latestVersionChanged();
 
     qDebug() << "Latest version found:" << m_latestVersion << "(Current:" << m_currentVersion << ")";
 
-    if (tagName != m_currentVersion) {
+    if (latest != current) {
         QString downloadUrl;
         QJsonArray assets = obj["assets"].toArray();
         
-        QString platformSuffix;
+        QStringList platformSuffixes;
 #ifdef Q_OS_WIN
-        platformSuffix = ".exe";
+        platformSuffixes << "-Installer.exe" << ".zip" << ".exe";
 #elif defined(Q_OS_MACOS)
-        platformSuffix = ".dmg";
+        platformSuffixes << ".dmg";
 #endif
 
         bool foundAsset = false;
         if (!assets.isEmpty()) {
-            for (int i = 0; i < assets.size(); ++i) {
-                QString assetName = assets[i].toObject()["name"].toString();
-                if (assetName.endsWith(platformSuffix, Qt::CaseInsensitive)) {
-                    downloadUrl = assets[i].toObject()["browser_download_url"].toString();
-                    foundAsset = true;
-                    break;
+            for (const QJsonValue &value : assets) {
+                QString assetName = value.toObject()["name"].toString();
+                for (const QString &suffix : platformSuffixes) {
+                    if (assetName.endsWith(suffix, Qt::CaseInsensitive)) {
+                        downloadUrl = value.toObject()["browser_download_url"].toString();
+                        foundAsset = true;
+                        break;
+                    }
                 }
+                if (foundAsset) break;
             }
+            
+            // Fallback to the first asset if no platform match found
             if (!foundAsset) {
                 downloadUrl = assets[0].toObject()["browser_download_url"].toString();
             }

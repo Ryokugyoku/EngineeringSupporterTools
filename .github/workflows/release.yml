@@ -7,6 +7,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   version:
     name: Calculate Next Version
@@ -79,6 +82,11 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: |
           windeployqt --qmldir ui build/Release/EngineeringSupporter.exe
+          
+          # インストーラーの作成 (NSISを使用)
+          # GitHub Actionsのwindows-latestには通常makensisが入っています
+          makensis /DAPP_VERSION="${{ needs.version.outputs.next_version }}" windows/installer.nsi
+          
           powershell Compress-Archive -Path build/Release/* -DestinationPath EngineeringSupporter-Windows.zip
 
       - name: Package macOS
@@ -111,6 +119,7 @@ jobs:
           path: |
             EngineeringSupporter-Windows.zip
             EngineeringSupporter-macOS.dmg
+            EngineeringSupporter-Installer.exe
 
   release:
     name: Create Release
@@ -129,6 +138,7 @@ jobs:
           prerelease: false
           files: |
             windows-latest-build/EngineeringSupporter-Windows.zip
+            windows-latest-build/EngineeringSupporter-Installer.exe
             macos-latest-build/EngineeringSupporter-macOS.dmg
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
