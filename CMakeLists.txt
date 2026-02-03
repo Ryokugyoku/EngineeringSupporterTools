@@ -14,7 +14,11 @@ find_package(Qt6 COMPONENTS Quick Qml Sql Network REQUIRED)
 qt_policy(SET QTP0001 OLD)
 
 set(TARGET_NAME EngineeringSupporter)
-set(PROJECT_VERSION "1.0.0")
+
+# バージョンが外部から指定されない場合のデフォルト値
+if(NOT PROJECT_VERSION)
+    set(PROJECT_VERSION "1.0.0")
+endif()
 
 # バージョンをC++から参照できるように定義
 add_definitions(-DAPP_VERSION="${PROJECT_VERSION}")

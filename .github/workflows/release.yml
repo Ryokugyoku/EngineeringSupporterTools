@@ -8,8 +8,46 @@ on:
       - 'v*'
 
 jobs:
+  version:
+    name: Calculate Next Version
+    runs-on: ubuntu-latest
+    outputs:
+      next_version: ${{ steps.calc.outputs.next_version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: calc
+        run: |
+          # 最新のタグを取得 (v1.0.x 形式)
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.0.0")
+          echo "Latest tag: $LATEST_TAG"
+          
+          # バージョン番号をパース (v1.0.0 -> 1 0 0)
+          VERSION_PARTS=(${LATEST_TAG//v/})
+          VERSION_PARTS=(${VERSION_PARTS//./ })
+          MAJOR=${VERSION_PARTS[0]}
+          MINOR=${VERSION_PARTS[1]}
+          PATCH=${VERSION_PARTS[2]}
+          
+          # パッチバージョンをインクリメント
+          NEW_PATCH=$((PATCH + 1))
+          NEXT_VERSION="v$MAJOR.$MINOR.$NEW_PATCH"
+          
+          # もし現在のコミットが既にタグ付けされている場合は、そのタグを使う
+          CURRENT_TAG=$(git tag --points-at HEAD)
+          if [ -n "$CURRENT_TAG" ]; then
+            NEXT_VERSION=$CURRENT_TAG
+          fi
+          
+          echo "Next version: $NEXT_VERSION"
+          echo "next_version=$NEXT_VERSION" >> $GITHUB_OUTPUT
+
   build:
     name: Build on ${{ matrix.os }}
+    needs: version
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -24,14 +62,14 @@ jobs:
       - name: Install Qt
         uses: jurplel/install-qt-action@v3
         with:
-          version: '6.5.0' # 安定版のQt6を指定
+          version: '6.5.0'
           host: ${{ matrix.os == 'windows-latest' && 'windows' || 'mac' }}
           target: 'desktop'
           arch: ${{ matrix.os == 'windows-latest' && 'win64_msvc2019_64' || 'clang_64' }}
 
       - name: Configure CMake
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPROJECT_VERSION="${{ needs.version.outputs.next_version }}"
 
       - name: Build
         run: |
@@ -40,41 +78,30 @@ jobs:
       - name: Package Windows
         if: matrix.os == 'windows-latest'
         run: |
-          # windeployqtで依存DLLを収集
           windeployqt --qmldir ui build/Release/EngineeringSupporter.exe
-          # 実行ファイルをリネームして配布用に
           powershell Compress-Archive -Path build/Release/* -DestinationPath EngineeringSupporter-Windows.zip
 
       - name: Package macOS
         if: matrix.os == 'macos-latest'
         run: |
-          # 実行ファイルのパスを取得（.app形式を優先）
           APP_PATH=$(find build -name "EngineeringSupporter.app" -type d | head -n 1)
-          
           if [ -z "$APP_PATH" ]; then
-            # バイナリ形式で生成された場合のフォールバック
             BINARY_PATH=$(find build -name "EngineeringSupporter" -type f -not -path "*/CMakeFiles/*" | head -n 1)
             if [ -n "$BINARY_PATH" ]; then
               mkdir -p build/EngineeringSupporter.app/Contents/MacOS
               mkdir -p build/EngineeringSupporter.app/Contents/Resources
               cp "$BINARY_PATH" build/EngineeringSupporter.app/Contents/MacOS/
+              printf '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n    <key>CFBundleExecutable</key>\n    <string>EngineeringSupporter</string>\n    <key>CFBundleIdentifier</key>\n    <string>com.ryokugyoku.EngineeringSupporter</string>\n    <key>CFBundleName</key>\n    <string>EngineeringSupporter</string>\n    <key>CFBundlePackageType</key>\n    <string>APPL</string>\n    <key>CFBundleShortVersionString</key>\n    <string>${{ needs.version.outputs.next_version }}</string>\n</dict>\n</plist>' > build/EngineeringSupporter.app/Contents/Info.plist
               APP_PATH="build/EngineeringSupporter.app"
-              
-              # 最小限の Info.plist を作成
-              printf '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n    <key>CFBundleExecutable</key>\n    <string>EngineeringSupporter</string>\n    <key>CFBundleIdentifier</key>\n    <string>com.ryokugyoku.EngineeringSupporter</string>\n    <key>CFBundleName</key>\n    <string>EngineeringSupporter</string>\n    <key>CFBundlePackageType</key>\n    <string>APPL</string>\n    <key>CFBundleShortVersionString</key>\n    <string>1.0.0</string>\n    <key>LSMinimumSystemVersion</key>\n    <string>10.15</string>\n</dict>\n</plist>' > build/EngineeringSupporter.app/Contents/Info.plist
-            else
-              echo "ERROR: EngineeringSupporter target not found!"
-              exit 1
             fi
           fi
-
-          # 拡張属性（検疫フラグや中途半端な署名）を削除して「完全に署名なし」の状態にする
           find "$APP_PATH" -type f -exec xattr -c {} \;
-
-          # macdeployqt でパッケージング
+          # 既存の不完全な署名を削除（これが「壊れている」の原因になることが多い）
+          find "$APP_PATH" -type f -exec codesign --remove-signature {} \; || true
+          
           macdeployqt "$APP_PATH" -qmldir=ui -dmg -no-plugins
           
-          # dmgファイルの移動
+          # 生成された.dmg内からも署名を消すことはできないが、dmg作成前に中身がクリーンなら改善するはず
           find . -name "*.dmg" -exec mv {} EngineeringSupporter-macOS.dmg \;
 
       - name: Upload Artifacts
@@ -87,16 +114,19 @@ jobs:
 
   release:
     name: Create Release
-    needs: build
+    needs: [version, build]
     runs-on: ubuntu-latest
     steps:
       - name: Download Artifacts
         uses: actions/download-artifact@v4
 
-      - name: Create GitHub Release
+      - name: Create GitHub Tag and Release
         uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
         with:
+          tag_name: ${{ needs.version.outputs.next_version }}
+          name: Release ${{ needs.version.outputs.next_version }}
+          draft: false
+          prerelease: false
           files: |
             windows-latest-build/EngineeringSupporter-Windows.zip
             macos-latest-build/EngineeringSupporter-macOS.dmg
