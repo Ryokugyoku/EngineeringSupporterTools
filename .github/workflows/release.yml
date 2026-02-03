@@ -42,8 +42,6 @@ jobs:
         run: |
           # windeployqtで依存DLLを収集
           windeployqt --qmldir ui build/Release/EngineeringSupporter.exe
-          # Updater.exe も同梱する
-          cp build/Release/Updater.exe build/Release/
           # 実行ファイルをリネームして配布用に
           powershell Compress-Archive -Path build/Release/* -DestinationPath EngineeringSupporter-Windows.zip
 
