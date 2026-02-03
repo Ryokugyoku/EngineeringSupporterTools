@@ -50,16 +50,14 @@ jobs:
       - name: Package macOS
         if: matrix.os == 'macos-latest'
         run: |
-          # 実行ファイルが生成されているディレクトリを確認（qt_add_executableのデフォルト挙動）
-          # macOSでは .app 形式で出力されるようにビルド
-          # macdeployqt でパッケージング。UpdaterもApp Bundleの中に含める必要があるかもしれないが
-          # ここではシンプルに dmg に含める
-          macdeployqt build/EngineeringSupporter.app -qmldir=ui -dmg -no-plugins
-          # Updaterを.appの中にコピー（オプション）
-          cp build/Updater build/EngineeringSupporter.app/Contents/MacOS/
-          # 再度macdeployqtを実行してdmgを更新するか、手動でdmgを作成
-          macdeployqt build/EngineeringSupporter.app -qmldir=ui -dmg -no-plugins
-          mv build/EngineeringSupporter.dmg EngineeringSupporter-macOS.dmg
+          # 実行ファイルの生成場所を確認
+          find build -name "*.app"
+          
+          # macdeployqt でパッケージング
+          macdeployqt build/Release/EngineeringSupporter.app -qmldir=ui -dmg -no-plugins || macdeployqt build/EngineeringSupporter.app -qmldir=ui -dmg -no-plugins
+          
+          # 成果物の移動
+          mv build/Release/EngineeringSupporter.dmg EngineeringSupporter-macOS.dmg || mv build/EngineeringSupporter.dmg EngineeringSupporter-macOS.dmg
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
