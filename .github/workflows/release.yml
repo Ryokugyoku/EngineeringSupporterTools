@@ -78,13 +78,31 @@ jobs:
         run: |
           cmake --build build --config Release
 
+      - name: Setup NSIS
+        if: matrix.os == 'windows-latest'
+        run: |
+          # NSISがインストールされているか確認し、パスを通す
+          # windows-latestには通常入っているが、コマンドが有効でない場合がある
+          if (!(Get-Command makensis -ErrorAction SilentlyContinue)) {
+            echo "NSIS not found in PATH, checking default location..."
+            $nsisPath = "C:\Program Files (x86)\NSIS"
+            if (Test-Path $nsisPath) {
+              echo "Found NSIS at $nsisPath, adding to PATH"
+              echo "$nsisPath" >> $env:GITHUB_PATH
+            } else {
+              echo "NSIS not found, installing..."
+              choco install nsis -y
+              echo "C:\Program Files (x86)\NSIS" >> $env:GITHUB_PATH
+            }
+          }
+
       - name: Package Windows
         if: matrix.os == 'windows-latest'
         run: |
           windeployqt --qmldir ui build/Release/EngineeringSupporter.exe
           
           # インストーラーの作成 (NSISを使用)
-          # GitHub Actionsのwindows-latestには通常makensisが入っています
+          # 前のステップでパスが通っていることを期待
           makensis /DAPP_VERSION="${{ needs.version.outputs.next_version }}" windows/installer.nsi
           
           powershell Compress-Archive -Path build/Release/* -DestinationPath EngineeringSupporter-Windows.zip
