@@ -23,9 +23,14 @@ add_definitions(-DAPP_VERSION="${PROJECT_VERSION}")
 include_directories(include data network)
 
 qt_add_executable(${TARGET_NAME}
+    MANUAL_FINALIZATION
     src/main.cpp
 )
-set_target_properties(${TARGET_NAME} PROPERTIES MACOS_BUNDLE TRUE)
+set_target_properties(${TARGET_NAME} PROPERTIES 
+    MACOS_BUNDLE TRUE
+    WIN32_EXECUTABLE TRUE
+)
+qt_finalize_executable(${TARGET_NAME})
 
 qt_add_qml_module(${TARGET_NAME}
     URI EngineeringSupporterTools

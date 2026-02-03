@@ -36,6 +36,7 @@ jobs:
       - name: Build
         run: |
           cmake --build build --config Release
+          ls -R build
 
       - name: Package Windows
         if: matrix.os == 'windows-latest'
