@@ -25,12 +25,17 @@ include_directories(include data network)
 qt_add_executable(${TARGET_NAME}
     src/main.cpp
 )
+
+# macOSで.appバンドルとしてビルドすることを明示
 set_target_properties(${TARGET_NAME} PROPERTIES 
     MACOS_BUNDLE TRUE
     WIN32_EXECUTABLE TRUE
 )
 
-# QMLモジュールの追加（ここがターゲット定義の完了を兼ねる）
+# ターゲット定義の完了（これがないと一部の環境で.app構成がスキップされる）
+qt_finalize_executable(${TARGET_NAME})
+
+# QMLモジュールの追加
 qt_add_qml_module(${TARGET_NAME}
     URI EngineeringSupporterTools
     VERSION 1.0

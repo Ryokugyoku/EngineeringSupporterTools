@@ -36,8 +36,6 @@ jobs:
       - name: Build
         run: |
           cmake --build build --config Release
-          echo "Listing all files in build directory to debug:"
-          find build -maxdepth 5
 
       - name: Package Windows
         if: matrix.os == 'windows-latest'
@@ -52,29 +50,27 @@ jobs:
       - name: Package macOS
         if: matrix.os == 'macos-latest'
         run: |
-          # 実行ファイルの生成場所を徹底的に確認
-          find build -name "*.app" -maxdepth 4
-          
-          # 生成された.appのパスを取得
+          # 実行ファイルのパスを取得（.app形式を優先）
           APP_PATH=$(find build -name "EngineeringSupporter.app" -type d | head -n 1)
-          echo "Found App at: $APP_PATH"
           
           if [ -z "$APP_PATH" ]; then
-            echo "ERROR: EngineeringSupporter.app not found!"
-            exit 1
+            # バイナリ形式で生成された場合のフォールバック
+            BINARY_PATH=$(find build -name "EngineeringSupporter" -type f -not -path "*/CMakeFiles/*" | head -n 1)
+            if [ -n "$BINARY_PATH" ]; then
+              mkdir -p build/EngineeringSupporter.app/Contents/MacOS
+              cp "$BINARY_PATH" build/EngineeringSupporter.app/Contents/MacOS/
+              APP_PATH="build/EngineeringSupporter.app"
+            else
+              echo "ERROR: EngineeringSupporter target not found!"
+              exit 1
+            fi
           fi
 
           # macdeployqt でパッケージング
           macdeployqt "$APP_PATH" -qmldir=ui -dmg -no-plugins
           
-          # dmgファイルの場所を探して移動
-          DMG_PATH=$(find build -name "*.dmg" | head -n 1)
-          if [ -n "$DMG_PATH" ]; then
-            mv "$DMG_PATH" EngineeringSupporter-macOS.dmg
-          else
-            # macdeployqtがカレントディレクトリに出力した場合
-            mv EngineeringSupporter.dmg EngineeringSupporter-macOS.dmg || echo "DMG not found in current dir"
-          fi
+          # dmgファイルの移動
+          find . -name "*.dmg" -exec mv {} EngineeringSupporter-macOS.dmg \;
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
