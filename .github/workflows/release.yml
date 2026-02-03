@@ -42,6 +42,8 @@ jobs:
         run: |
           # windeployqtで依存DLLを収集
           windeployqt --qmldir ui build/Release/EngineeringSupporter.exe
+          # Updater.exe も同梱する
+          cp build/Release/Updater.exe build/Release/
           # 実行ファイルをリネームして配布用に
           powershell Compress-Archive -Path build/Release/* -DestinationPath EngineeringSupporter-Windows.zip
 
@@ -50,6 +52,12 @@ jobs:
         run: |
           # 実行ファイルが生成されているディレクトリを確認（qt_add_executableのデフォルト挙動）
           # macOSでは .app 形式で出力されるようにビルド
+          # macdeployqt でパッケージング。UpdaterもApp Bundleの中に含める必要があるかもしれないが
+          # ここではシンプルに dmg に含める
+          macdeployqt build/EngineeringSupporter.app -qmldir=ui -dmg -no-plugins
+          # Updaterを.appの中にコピー（オプション）
+          cp build/Updater build/EngineeringSupporter.app/Contents/MacOS/
+          # 再度macdeployqtを実行してdmgを更新するか、手動でdmgを作成
           macdeployqt build/EngineeringSupporter.app -qmldir=ui -dmg -no-plugins
           mv build/EngineeringSupporter.dmg EngineeringSupporter-macOS.dmg
 

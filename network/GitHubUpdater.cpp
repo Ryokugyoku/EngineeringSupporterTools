@@ -162,23 +162,40 @@ void GitHubUpdater::installUpdate()
         return;
     }
 
+    QString appPath = QCoreApplication::applicationFilePath();
+    QString appDir = QCoreApplication::applicationDirPath();
+    qint64 pid = QCoreApplication::applicationPid();
+
+    // アップデーターのパスを取得（実行ファイルと同じディレクトリにあると仮定）
 #ifdef Q_OS_WIN
-    // Windows: 外部コマンドで自分自身を置き換えるか、インストーラーを起動
-    // ここでは単純にインストーラー/新バイナリを起動して終了する例
-    if (QProcess::startDetached(m_downloadedFilePath)) {
-        QCoreApplication::quit();
-    } else {
-        emit errorOccurred("Failed to launch update installer");
-    }
-#elif defined(Q_OS_MACOS)
-    // macOS: DMGならマウントして中身をコピー、または実行ファイルなら置き換え
-    // ここでは単純にファイルをブラウザ/Finderで開くか、またはスクリプトで対応
-    if (QProcess::startDetached("open", {m_downloadedFilePath})) {
-        // macOSの場合はDMGを開いた後にユーザーがドラッグ&ドロップするのが一般的
-        // 自動でやる場合はもっと複雑な処理が必要
-        QCoreApplication::quit();
-    } else {
-        emit errorOccurred("Failed to open update package");
-    }
+    QString updaterName = "Updater.exe";
+#else
+    QString updaterName = "Updater";
 #endif
+    QString updaterPath = QDir(appDir).filePath(updaterName);
+
+    // 開発環境など、同じディレクトリにない場合のフォールバック（ビルドディレクトリなど）
+    if (!QFile::exists(updaterPath)) {
+        updaterPath = QDir(appDir).filePath("../Updater"); // macOS bundle case
+        if (!QFile::exists(updaterPath)) {
+            emit errorOccurred("Updater utility not found at: " + updaterPath);
+            return;
+        }
+    }
+
+    qDebug() << "Launching updater:" << updaterPath;
+    
+    // 引数: <pid> <new_file> <old_file> <restart_cmd>
+    QStringList args;
+    args << QString::number(pid) 
+         << m_downloadedFilePath 
+         << appPath 
+         << appPath;
+
+    if (QProcess::startDetached(updaterPath, args)) {
+        qDebug() << "Updater launched, quitting app...";
+        QCoreApplication::quit();
+    } else {
+        emit errorOccurred("Failed to launch updater");
+    }
 }

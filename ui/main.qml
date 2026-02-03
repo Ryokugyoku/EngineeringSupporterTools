@@ -28,6 +28,11 @@ ApplicationWindow {
         }
     }
 
+    Component.onCompleted: {
+        // 起動時に自動でアップデートを確認
+        updater.checkForUpdates("Ryokugyoku/EngineeringSupporterTools")
+    }
+
     Dialog {
         id: updateDialog
         property string newVersion: ""

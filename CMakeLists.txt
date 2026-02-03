@@ -10,6 +10,9 @@ set(CMAKE_AUTORCC ON)
 
 find_package(Qt6 COMPONENTS Quick Qml Sql Network REQUIRED)
 
+# Keep legacy QML resource prefix to avoid changing qrc paths (suppresses QTP0001 warning)
+qt_policy(SET QTP0001 OLD)
+
 set(TARGET_NAME EngineeringSupporter)
 set(PROJECT_VERSION "1.0.0")
 
@@ -20,9 +23,9 @@ add_definitions(-DAPP_VERSION="${PROJECT_VERSION}")
 include_directories(include data network)
 
 qt_add_executable(${TARGET_NAME}
-    MACOS_BUNDLE
     src/main.cpp
 )
+set_target_properties(${TARGET_NAME} PROPERTIES MACOS_BUNDLE TRUE)
 
 qt_add_qml_module(${TARGET_NAME}
     URI EngineeringSupporterTools
@@ -34,5 +37,9 @@ qt_add_qml_module(${TARGET_NAME}
         data/KeyValueStore.cpp data/KeyValueStore.h
         network/GitHubUpdater.cpp network/GitHubUpdater.h
 )
+
+# アップデーターツールの追加
+add_executable(Updater src/updater/main.cpp)
+set_target_properties(Updater PROPERTIES OUTPUT_NAME "Updater")
 
 target_link_libraries(${TARGET_NAME} PRIVATE Qt6::Quick Qt6::Qml Qt6::Sql Qt6::Network)
